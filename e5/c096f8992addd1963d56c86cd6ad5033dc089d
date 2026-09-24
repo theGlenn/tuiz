@@ -1,0 +1,86 @@
+examples/demo.zig
+  s_676ae749bbe2bb::t_ccadbe398a9b08 579-580,582-584
+  s_676ae749bbe2bb::t_4e3904af553f09 576-578
+  s_676ae749bbe2bb::t_05a4dc650574b3 581
+  s_676ae749bbe2bb::t_4cdd783e9691d6 585-587
+  s_0809076dd3e499::t_af233a50d2fe8e 1-575,588-661
+.github/workflows/ci.yml
+  s_676ae749bbe2bb::t_596c25f21ac590 32-34
+  s_676ae749bbe2bb::t_ccc1a941174381 30-31
+  s_676ae749bbe2bb::t_7b0d4f376af2b6 35-37
+  s_0809076dd3e499::t_f2699a167051e8 21
+assets/demo-screenshot.tape
+  s_676ae749bbe2bb::t_be0e20c3983a0c 1-23
+src/unicode_widths.zig
+  s_1ad4494925c6f9::t_173fd48a5b0f24 1-129
+tools/unicode/EastAsianWidth-17.0.0.txt
+  s_1ad4494925c6f9::t_2f922309214d00 1-2721
+tools/unicode/LICENSE.txt
+  s_1ad4494925c6f9::t_65fa4715400d4f 1-39
+README.md
+  s_1ad4494925c6f9::t_8e1379b1d36cde 3-4,6-8,11-12,17-18,22-24,27-28,33-42,47-48,52,58-62,101,129-131,147,154-157,160-168
+build.zig
+  s_0809076dd3e499::t_50c1b02265a8d3 29-45,56,62-80
+build.zig.zon
+  s_0809076dd3e499::t_508a5dc3ed561a 7
+examples/dashboard.zig
+  s_0809076dd3e499::t_63772e07c2a230 95,97-98
+src/cell.zig
+  s_0809076dd3e499::t_2e5afb5437311b 8-11,26-27,71-72,91,98,329-337
+src/layout.zig
+  s_1ad4494925c6f9::t_f00faeb3229daa 13,19,23,39-41,50
+src/sanitize.zig
+  s_0809076dd3e499::t_0e1a444b70f154 29-30,35-42,47,66-68,118-153
+src/terminal.zig
+  s_0809076dd3e499::t_9d6107925f058d 89-91,128-132
+src/widgets/logo.zig
+  s_0809076dd3e499::t_05e2f960e931f3 10,26-27,45,54,64-65,72,77,88-90,93-94,107-108,124,212,217,269-281
+src/widgets/series.zig
+  s_0809076dd3e499::t_8c92cb2b4679de 45-47,53,99-100,116,125,156,261-296
+tests/consumer/build.zig
+  s_0809076dd3e499::t_b8f3d95b00ab30 1-18
+tests/consumer/build.zig.zon
+  s_0809076dd3e499::t_0ae0c42a5a95c0 1-8
+tests/consumer/main.zig
+  s_0809076dd3e499::t_127ef9c9c3cfb2 1-14
+tests/terminal_probe.zig
+  s_0809076dd3e499::t_cd9bd53f6178ec 1-31
+tests/terminal_test.py
+  s_0809076dd3e499::t_427f63bf8f96fc 1-62
+tools/generate_widths.py
+  s_1ad4494925c6f9::t_a3848a6a471e89 1-62
+tools/unicode/README.md
+  s_1ad4494925c6f9::t_d69197b113fbc0 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e5c096f8992addd1963d56c86cd6ad5033dc089d",
+  "prompts": {},
+  "sessions": {
+    "s_0809076dd3e499": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a0d109-4121-7172-a7e3-ae77a03e3eeb",
+        "model": "unknown"
+      },
+      "human_author": "Glenn Sonna <kenpachi.os@gmail.com>"
+    },
+    "s_1ad4494925c6f9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d109-4121-7172-a7e3-ae77a03e3eeb",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Glenn Sonna <kenpachi.os@gmail.com>"
+    },
+    "s_676ae749bbe2bb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c8d11181-52fc-4717-ac68-11446bd3e3de",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Glenn Sonna <kenpachi.os@gmail.com>"
+    }
+  }
+}
