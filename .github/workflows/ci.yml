@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        optimize: [Debug, ReleaseSafe]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      # Third-party actions are pinned to reviewed commits.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - run: zig fmt --check build.zig build.zig.zon src examples tests
+      - run: python3 tools/generate_widths.py --check
+      - run: zig build test -Doptimize=${{ matrix.optimize }} --summary all
+      - run: zig build test-terminal -Doptimize=${{ matrix.optimize }}
+      - run: zig build --build-file tests/consumer/build.zig -Doptimize=${{ matrix.optimize }}
+      # Redirected stdout makes each example draw one frame and exit.
+      - run: zig build run -Doptimize=${{ matrix.optimize }} > frame.txt && test -s frame.txt
+      - run: zig build demo -Doptimize=${{ matrix.optimize }} > demo.txt && test -s demo.txt
