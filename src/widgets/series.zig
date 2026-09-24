@@ -42,17 +42,15 @@ pub fn Series(comptime capacity: usize) type {
         /// freshly reset ring.
         count: usize = 0,
 
-        /// NaN samples are dropped rather than stored. Sources
-        /// legitimately emit NaN for "not sampled yet" or "field
-        /// unavailable on this platform"; letting one through
-        /// poisons the normaliser and the resulting `@intFromFloat`
-        /// is undefined behaviour in ReleaseFast.
+        /// Store finite samples. Negative values contribute to `avg`
+        /// but draw as empty bars; maxima have a lower bound of zero.
+        /// NaN and infinities are dropped to keep scaling finite.
         ///
         /// A caller keeping two series in lockstep on one clock should
         /// substitute 0 rather than skip the push — 0 draws as an
         /// empty column, and skipping would slide the two out of step.
         pub fn push(self: *Self, v: f32) void {
-            if (std.math.isNan(v)) return;
+            if (!std.math.isFinite(v)) return;
             self.samples[self.head] = v;
             self.head = (self.head + 1) % capacity;
             if (v > self.max) self.max = v;
@@ -98,7 +96,8 @@ pub fn Series(comptime capacity: usize) type {
 
         /// One row of a multi-row area chart, exactly `width` cells.
         /// `row` 0 is the top of `rows`; `denom` is the value that
-        /// reaches full height.
+        /// reaches full height. Nonpositive or nonfinite denominators
+        /// draw blank rows. For nonempty output, `row` must be < `rows`.
         ///
         /// Live-feed: the newest sample sits at the right edge and
         /// older ones scroll left, padding on the left until the ring
@@ -114,6 +113,7 @@ pub fn Series(comptime capacity: usize) type {
             denom: f32,
         ) !void {
             if (width == 0 or rows == 0) return;
+            std.debug.assert(row < rows);
 
             const show_n = @min(width, self.count);
             var pad_n = width - show_n;
@@ -122,7 +122,7 @@ pub fn Series(comptime capacity: usize) type {
 
             // A non-positive denominator means "nothing to scale
             // against yet"; drawing blank beats dividing by zero.
-            if (denom <= 0) {
+            if (!std.math.isFinite(denom) or denom <= 0) {
                 var j: usize = 0;
                 while (j < show_n) : (j += 1) try w.writeAll(" ");
                 return;
@@ -153,7 +153,7 @@ pub fn Series(comptime capacity: usize) type {
             while (j < show_n) : (j += 1) {
                 const v = self.samples[self.sampleIndex(show_n, j)];
                 const norm = if (effective_max > 0) v / effective_max else 0;
-                const slot = @min(@as(usize, @intFromFloat(norm * 8)), 8);
+                const slot: usize = @intFromFloat(std.math.clamp(norm, 0, 1) * 8);
                 try w.writeAll(blocks[slot]);
             }
         }
@@ -257,4 +257,40 @@ test "sparkline pads on the left so the newest sample lands right" {
     s.push(1);
     try s.sparkline(&w, 4);
     try std.testing.expectEqualStrings("  ██", w.buffered());
+}
+
+test "negative samples preserve statistics and draw empty bars" {
+    var s = Series(4){};
+    s.push(-1);
+    s.push(1);
+    try std.testing.expectEqual(@as(f32, 0), s.avg());
+    var buf: [64]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    try s.sparkline(&w, 2);
+    try std.testing.expectEqualStrings(" █", w.buffered());
+    w = .fixed(&buf);
+    try s.chartRow(&w, 0, 1, 2, 1);
+    try std.testing.expectEqualStrings(" ▇", w.buffered());
+}
+
+test "nonfinite samples are dropped without poisoning later samples" {
+    var s = Series(4){};
+    for ([_]f32{ std.math.nan(f32), std.math.inf(f32), -std.math.inf(f32) }) |v| s.push(v);
+    try std.testing.expectEqual(@as(usize, 0), s.count);
+    s.push(1);
+    var buf: [64]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    try s.sparkline(&w, 1);
+    try std.testing.expectEqualStrings("█", w.buffered());
+}
+
+test "invalid chart denominators produce blank rows" {
+    var s = Series(4){};
+    s.push(1);
+    for ([_]f32{ 0, -1, std.math.nan(f32), std.math.inf(f32) }) |denom| {
+        var buf: [64]u8 = undefined;
+        var w: std.Io.Writer = .fixed(&buf);
+        try s.chartRow(&w, 0, 1, 2, denom);
+        try std.testing.expectEqualStrings("  ", w.buffered());
+    }
 }

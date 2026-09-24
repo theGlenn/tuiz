@@ -1,58 +1,65 @@
 # tuiz
 
-A small, dependency-free Zig toolkit for open-layout terminal
-dashboards — the kind with no box borders, one accent colour, a
-display-sized headline figure, and a chart behind it.
+A small, dependency-free Zig toolkit for terminal dashboards with
+open layouts, large headline figures, charts, and meters.
 
-Extracted from the live dashboard of the `zzzbench` inference
-benchmark, where it draws device telemetry and generation speed.
+![ARGO-7 ascent telemetry drawn with tuiz: a mission patch, altitude
+in block numerals, a velocity area chart, engine and propellant
+meters, and a downlink log](assets/demo.png)
 
 ```sh
-zig build run    # animated example; q quits
+zig build demo    # flight demo shown above; space pauses, q quits
+zig build run     # simpler dashboard example; q quits
 ```
 
 ## Scope
 
-Truecolor, a row-oriented canvas with a gutter, cell-accurate width
-accounting, and the widgets a telemetry dashboard needs:
+Supports 24-bit colour, draws one row at a time, and
+measures text in terminal cells to keep columns aligned.
 
 | Module | What it does |
 | --- | --- |
-| `color` | 24-bit RGB, comptime SGR strings, gradient ramps |
-| `cell` | visible width of colourised UTF-8 (CJK and emoji count as two cells), truncation, padding to a column |
-| `sanitize` | emit untrusted text without letting it drive the terminal |
+| `color` | 24-bit RGB, compile-time colour escape sequences, gradient ramps |
+| `cell` | visible width of colourised UTF-8 (Chinese, Japanese, Korean characters and emoji count as two cells), truncation, padding to a column |
+| `sanitize` | replace control characters in untrusted text before printing it |
 | `Canvas` | frame writer: rows, rules, section dividers, gutters |
 | `Viewport` | terminal size → drawable content box, with size limits |
-| `terminal` | raw mode, alt screen, SIGWINCH, stdin drain |
-| `Series` | sample ring → multi-row area chart or sparkline |
+| `terminal` | raw mode, alternate screen, resize signals, input draining |
+| `Series` | ring buffer of samples rendered as an area chart or sparkline |
 | `meter` | eighth-block percentage bar over a dotted track |
 | `bigtext` | 3×5 block-glyph numerals for a headline figure |
 | `logo` | half-block bitmap art, two pixels per cell |
 
-The toolkit does not include an event loop, a widget tree, cell diffing,
-mouse input, or grapheme-cluster segmentation (a ZWJ emoji sequence
-measures as its parts). If you need those, reach for
-[libvaxis](https://github.com/rockorager/libvaxis) or notcurses.
+Does not include:
+
+- an event loop
+- a widget tree
+- cell diffing
+- mouse input
+- grapheme-cluster segmentation (emoji joined with a
+zero-width joiner are measured as separate parts).
+
+If you need those, reach for [libvaxis](https://github.com/rockorager/libvaxis) or notcurses.
 
 ## Design
 
 The toolkit writes bytes into a writer you supply. Your application
-manages file descriptors, chooses the I/O backend, and supplies the
-palette.
+manages file descriptors, chooses the I/O backend, supplies the
+palette, and runs the event loop.
 
 `terminal` exports escape sequences as `[]const u8` constants,
 `Canvas` takes a `Style`, and every widget takes its colours as
-arguments. Your application also runs the event loop.
+arguments.
 
 ## Untrusted text
 
 Pass any string your app did not write itself through `sanitize.write`
 before it reaches a row. This includes hostnames, filenames, and a
-subprocess's stderr. One `\x1b` in a device name otherwise lets whoever
-supplied it repaint the screen, set the window title, or write the
-clipboard. It also silently breaks layout: `cell.width` skips CSI
-sequences, so an embedded escape measures as zero cells and every
-column after it lands wrong.
+subprocess's stderr. Escape sequences beginning with `\x1b` can repaint
+the screen, set the window title, or write to the clipboard. They can
+also break layout: `cell.width` ignores terminal control sequences
+that begin with `\x1b[`, even when those commands move the cursor or
+clear the screen.
 
 ```zig
 try lw.print(" {s}", .{label_color});
@@ -91,7 +98,7 @@ const exe = b.addExecutable(.{
 const std = @import("std");
 const tuiz = @import("tuiz");
 
-// Your palette. The toolkit ships none.
+// Define the dashboard's colours.
 const rule_color = tuiz.color.fg("#14343a");
 const accent = tuiz.color.fg("#f5c518");
 const heat = tuiz.Ramp{ .stops = &.{
@@ -119,10 +126,9 @@ pub fn drawFrame(out: *std.Io.Writer, cpu: *const Series, ws: std.posix.winsize)
     try canvas.rowPrint("  {s}dashboard", .{accent});
     try canvas.rule(view.content_w);
 
-    // Chart rows: one SGR per row, not per cell. The last argument is
-    // the value that reaches full height — a fixed 100 for a
-    // percentage, or `cpu.maxRecent(width)` to auto-scale to whatever
-    // is currently on screen.
+    // Set one colour per chart row. The last chartRow argument is
+    // the value that reaches full height: 100 for a percentage, or
+    // `cpu.maxRecent(view.content_w)` to scale to the visible samples.
     const rows = 8;
     for (0..rows) |r| {
         var line: [tuiz.scratch_len]u8 = undefined;
@@ -138,17 +144,28 @@ pub fn drawFrame(out: *std.Io.Writer, cpu: *const Series, ws: std.posix.winsize)
 
 Then push `out.buffered()` to the terminal using your chosen I/O backend.
 [`examples/dashboard.zig`](examples/dashboard.zig) is a
-complete program: raw mode, alt screen, resize handling, a poll-based
+complete program: raw mode, alternate screen, resize handling, a poll-based
 loop, and every widget above.
 
 ## Testing
 
 ```sh
 zig build test
+zig build test -Doptimize=ReleaseSafe
+zig build test-terminal                         # Python 3; Linux/macOS PTY tests
+zig build --build-file tests/consumer/build.zig  # downstream import without libc
+python3 tools/generate_widths.py --check
 ```
 
-Every module carries its own unit tests; the example adds a test that
-each frame fits the viewport it was drawn for.
+Wide-character tables use pinned Unicode 17 data. Regenerate them with
+`python3 tools/generate_widths.py`; normal builds need only Zig.
+Ambiguous characters count as one cell, so terminals with a different
+width policy can disagree.
+
+`Series` stores finite samples and drops NaN and infinities. Negative
+values contribute to averages and draw as empty bars. Logo rows reset
+incoming attributes and use the terminal's default background for
+transparent pixels.
 
 ## License
 

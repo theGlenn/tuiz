@@ -5,12 +5,10 @@
 //! SGR escapes are zero-width, UTF-8 glyphs are multi-byte, and CJK
 //! and emoji occupy two cells each.
 //!
-//! The table below is biased toward safety rather than toward
-//! accuracy. Undercounting is what overflows a row, so every range
-//! that is known to be double-width is listed, while an unlisted or
-//! ambiguous code point counts as one cell. Zero-width combining
-//! marks are handled for the common cases; anything missed there
-//! costs a cell of padding, never a wrapped line.
+//! Wide and Fullwidth ranges come from Unicode 17. Ambiguous code
+//! points count as one cell. Combining marks are handled for common
+//! cases; a missed mark costs a cell of padding. Terminals using a
+//! different Unicode version or ambiguous-width policy can disagree.
 
 const std = @import("std");
 
@@ -25,7 +23,8 @@ pub fn codepointWidth(cp: u21) u2 {
     return 1;
 }
 
-const Range = struct { lo: u21, hi: u21 };
+const wide = @import("unicode_widths.zig");
+const Range = wide.Range;
 
 /// Sorted, non-overlapping. Binary search relies on both.
 fn inRanges(cp: u21, ranges: []const Range) bool {
@@ -69,34 +68,8 @@ const zero_width = [_]Range{
     .{ .lo = 0xfeff, .hi = 0xfeff }, // BOM / ZWNBSP
 };
 
-/// East Asian Wide and Fullwidth, plus the emoji blocks terminals
-/// render double-width. Derived from Unicode's EastAsianWidth W and F
-/// classes; ranges are merged where the gaps are also wide.
-const double_width = [_]Range{
-    .{ .lo = 0x1100, .hi = 0x115f }, // Hangul Jamo initial consonants
-    .{ .lo = 0x2e80, .hi = 0x303e }, // CJK radicals through symbols
-    .{ .lo = 0x3041, .hi = 0x33ff }, // kana, Hangul compat, CJK compat
-    .{ .lo = 0x3400, .hi = 0x4dbf }, // CJK extension A
-    .{ .lo = 0x4e00, .hi = 0x9fff }, // CJK unified ideographs
-    .{ .lo = 0xa000, .hi = 0xa4cf }, // Yi
-    .{ .lo = 0xa960, .hi = 0xa97f }, // Hangul Jamo extended-A
-    .{ .lo = 0xac00, .hi = 0xd7a3 }, // Hangul syllables
-    .{ .lo = 0xf900, .hi = 0xfaff }, // CJK compatibility ideographs
-    .{ .lo = 0xfe10, .hi = 0xfe19 }, // vertical forms
-    .{ .lo = 0xfe30, .hi = 0xfe6f }, // CJK compatibility forms
-    .{ .lo = 0xff00, .hi = 0xff60 }, // fullwidth forms
-    .{ .lo = 0xffe0, .hi = 0xffe6 }, // fullwidth signs
-    .{ .lo = 0x1f200, .hi = 0x1f251 }, // enclosed ideographic supplement
-    // Pictographs through supplemental symbols. Taken as one span
-    // rather than the dozen fragments Unicode actually defines: the
-    // gaps hold a handful of narrow symbols, and counting one of
-    // those as two cells costs a cell of slack, while missing a wide
-    // one costs a wrapped row.
-    .{ .lo = 0x1f300, .hi = 0x1f9ff },
-    .{ .lo = 0x1fa70, .hi = 0x1faff }, // symbols and pictographs ext-A
-    .{ .lo = 0x20000, .hi = 0x2fffd }, // CJK extension B and beyond
-    .{ .lo = 0x30000, .hi = 0x3fffd },
-};
+/// Unicode 17 Wide/Fullwidth ranges, generated from the pinned source.
+const double_width = wide.double_width;
 
 comptime {
     assertSorted(&zero_width);
@@ -115,13 +88,14 @@ fn assertSorted(ranges: []const Range) void {
 /// occupy nothing.
 pub const Step = struct { bytes: usize, cells: usize };
 
-/// One display unit from the front of `s`: an escape sequence (zero
+/// Requires nonempty `s`. One display unit: an escape sequence (zero
 /// cells), or a code point together with a trailing VS16 (one step of
 /// two cells, never split). Public so text-wrapping callers advance by
 /// the same units `width` and `truncate` measure by — a wrapper with
 /// its own stepping disagrees with the clipper exactly at the widths
 /// where it matters.
 pub fn step(s: []const u8) Step {
+    std.debug.assert(s.len > 0);
     return stepAt(s, 0);
 }
 
@@ -351,4 +325,13 @@ test "padTo fills to the target visible width" {
     try w.writeAll("\x1b[1mhi\x1b[0m");
     try padTo(&w, 5);
     try std.testing.expectEqual(@as(usize, 5), width(w.buffered()));
+}
+
+test "Unicode wide symbols fit only in a two-cell budget" {
+    // Unicode 17 EastAsianWidth W, including ranges outside CJK blocks.
+    for ([_][]const u8{ "⌚", "✅", "🀄", "☔", "🦀" }) |s| {
+        try std.testing.expectEqual(@as(usize, 2), width(s));
+        try std.testing.expectEqualStrings("", truncate(s, 1));
+        try std.testing.expectEqualStrings(s, truncate(s, 2));
+    }
 }

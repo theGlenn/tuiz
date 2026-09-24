@@ -7,8 +7,7 @@
 //! Those subpixels are close to square but not square: a cell is not
 //! exactly twice as tall as it is wide, so art mapped to a square grid
 //! renders a few percent too wide. Correcting that is the generator's
-//! job, not this file's — `tools/logo2blocks.py` derives each mark's
-//! width from a measured cell aspect. What arrives here is already in
+//! job, not this file's. What arrives here is already in
 //! the right proportions, and is drawn one subpixel per half-cell with
 //! no scaling of any kind.
 //!
@@ -24,10 +23,8 @@
 //!   • `Mask`   — one bit per subpixel plus a caller-chosen colour, for
 //!     the single-colour marks that are most of them, at 1/32 the size.
 //!
-//! Transparency is the point of both. A subpixel with no colour emits
-//! no background, so the mark sits on whatever the panel is painted
-//! rather than inside a black rectangle — the single biggest difference
-//! between art that looks placed and art that looks pasted.
+//! Transparent subpixels use the terminal's default background.
+//! Each row resets incoming attributes and restores defaults on success.
 
 const std = @import("std");
 const color = @import("../color.zig");
@@ -45,6 +42,7 @@ const lower = "▄";
 const bg_default = "\x1b[49m";
 
 /// Full-colour art: one optional colour per subpixel, row-major.
+/// `px` is borrowed and must hold at least `w * h` subpixels.
 pub const Bitmap = struct {
     w: usize,
     h: usize,
@@ -53,7 +51,7 @@ pub const Bitmap = struct {
     /// Terminal rows this occupies. An odd `h` leaves the final row's
     /// bottom half empty rather than dropping it.
     pub fn rows(self: Bitmap) usize {
-        return (self.h + 1) / 2;
+        return self.h / 2 + self.h % 2;
     }
 
     fn at(self: Bitmap, x: usize, y: usize) ?Rgb {
@@ -63,19 +61,20 @@ pub const Bitmap = struct {
 };
 
 /// Single-colour art: one bit per subpixel, row-major, MSB first, each
-/// row padded to a byte boundary.
+/// row padded to a byte boundary. `bits` is borrowed and must hold at
+/// least `stride() * h` bytes.
 pub const Mask = struct {
     w: usize,
     h: usize,
     bits: []const u8,
 
     pub fn rows(self: Mask) usize {
-        return (self.h + 1) / 2;
+        return self.h / 2 + self.h % 2;
     }
 
     /// Bytes one row of the mask occupies, padding included.
     pub fn stride(self: Mask) usize {
-        return (self.w + 7) / 8;
+        return self.w / 8 + @intFromBool(self.w % 8 != 0);
     }
 
     fn at(self: Mask, x: usize, y: usize) bool {
@@ -86,10 +85,13 @@ pub const Mask = struct {
 
 /// Draw cell-row `row` of `bmp`. Unlike the rest of the toolkit this
 /// emits its own SGRs, because the colours are data rather than
-/// palette — the same reason `color.writeFg` exists for ramps. Both
-/// colours are back to the terminal default when it returns.
+/// palette. Resets incoming attributes before drawing; transparent
+/// halves use the default background. On success, attributes are reset.
+/// `row` must be below `bmp.rows()`. Writer errors may leave partial output.
 pub fn writeBitmapRow(w: anytype, bmp: Bitmap, row: usize) !void {
     std.debug.assert(row < bmp.rows());
+    std.debug.assert(bmp.w == 0 or bmp.h <= bmp.px.len / bmp.w);
+    try w.writeAll(color.reset);
     var sgr = SgrState{};
     var x: usize = 0;
     while (x < bmp.w) : (x += 1) {
@@ -102,6 +104,8 @@ pub fn writeBitmapRow(w: anytype, bmp: Bitmap, row: usize) !void {
 /// `writeBitmapRow`: colours are reset on return.
 pub fn writeMaskRow(w: anytype, mask: Mask, ink: Rgb, row: usize) !void {
     std.debug.assert(row < mask.rows());
+    std.debug.assert(mask.stride() == 0 or mask.h <= mask.bits.len / mask.stride());
+    try w.writeAll(color.reset);
     var sgr = SgrState{};
     var x: usize = 0;
     while (x < mask.w) : (x += 1) {
@@ -117,7 +121,7 @@ pub fn writeMaskRow(w: anytype, mask: Mask, ink: Rgb, row: usize) !void {
 /// Worst case is a cell that changes both colours: two 19-byte
 /// truecolor SGRs plus a 3-byte glyph.
 pub fn maxRowBytes(cells: usize) usize {
-    return cells * (19 + 19 + 3) + bg_default.len + color.reset.len;
+    return cells * (19 + 19 + 3) + bg_default.len + 2 * color.reset.len;
 }
 
 /// One cell of output plus the colour state needed to skip redundant
@@ -167,7 +171,6 @@ const SgrState = struct {
     }
 
     fn clear(self: *SgrState, w: anytype) !void {
-        if (self.fg == null and self.bg == null) return;
         try w.writeAll(color.reset);
         self.* = .{};
     }
@@ -206,14 +209,12 @@ test "each half-lit cell picks the block that matches the lit half" {
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, out, " "));
 }
 
-test "transparent subpixels never paint a background" {
-    // All-empty art must emit no colour at all, or the mark would
-    // arrive inside a rectangle of terminal-default black.
+test "transparent subpixels use the terminal default background" {
     const bmp = Bitmap{ .w = 4, .h = 2, .px = &(.{transparent} ** 8) };
     var buf: [256]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
     try writeBitmapRow(&w, bmp, 0);
-    try testing.expectEqualStrings("    ", w.buffered());
+    try testing.expectEqualStrings(color.reset ++ "    " ++ color.reset, w.buffered());
 }
 
 test "a flat run emits one SGR pair, not one per cell" {
@@ -264,4 +265,17 @@ test "maxRowBytes bounds what a worst-case row actually emits" {
     var w: std.Io.Writer = .fixed(&buf);
     try writeBitmapRow(&w, bmp, 0);
     try testing.expect(w.buffered().len <= maxRowBytes(8));
+}
+
+test "transparent rows restore an inherited foreground and background" {
+    var buf: [128]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    try color.writeBg(&w, gold);
+    try color.writeFg(&w, teal);
+    const start = w.buffered().len;
+    try writeBitmapRow(&w, .{ .w = 1, .h = 2, .px = &.{ null, null } }, 0);
+    try testing.expectEqualStrings(color.reset ++ " " ++ color.reset, w.buffered()[start..]);
+    w = .fixed(&buf);
+    try writeMaskRow(&w, .{ .w = 1, .h = 2, .bits = &.{ 0, 0 } }, gold, 0);
+    try testing.expectEqualStrings(color.reset ++ " " ++ color.reset, w.buffered());
 }

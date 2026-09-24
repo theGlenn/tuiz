@@ -92,8 +92,10 @@ fn quitPressed(timeout_ms: i32) bool {
     }};
     const ready = std.posix.poll(&pfd, timeout_ms) catch return false;
     if (ready == 0) return false;
+    if (pfd[0].revents & std.posix.POLL.IN == 0) return true;
     var keys: [32]u8 = undefined;
-    const n = std.posix.read(std.posix.STDIN_FILENO, &keys) catch return false;
+    const n = std.posix.read(std.posix.STDIN_FILENO, &keys) catch return true;
+    if (n == 0) return true;
     for (keys[0..n]) |key| {
         if (key == 'q' or key == 0x03) return true;
     }

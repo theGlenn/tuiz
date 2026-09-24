@@ -26,19 +26,25 @@ const cell = @import("cell.zig");
 /// visibly not a letter.
 pub const replacement = "?";
 
-/// Write `s` with every terminal-interpreted byte replaced.
+/// Write valid UTF-8, replacing controls, bidi overrides/isolates, and
+/// each malformed input byte with `?`. Valid multibyte text is preserved.
 pub fn write(w: anytype, s: []const u8) !void {
     var run_start: usize = 0;
     var i: usize = 0;
     while (i < s.len) {
-        const skip = dangerousAt(s, i);
-        if (skip == 0) {
-            i += 1;
+        const len = std.unicode.utf8ByteSequenceLength(s[i]) catch 0;
+        const cp = if (len != 0 and len <= s.len - i)
+            std.unicode.utf8Decode(s[i..][0..len]) catch null
+        else
+            null;
+        const consumed: usize = if (cp != null) len else 1;
+        if (cp != null and !dangerous(cp.?)) {
+            i += consumed;
             continue;
         }
         if (i > run_start) try w.writeAll(s[run_start..i]);
         try w.writeAll(replacement);
-        i += skip;
+        i += consumed;
         run_start = i;
     }
     if (run_start < s.len) try w.writeAll(s[run_start..]);
@@ -57,34 +63,9 @@ pub fn into(buf: []u8, s: []const u8) []const u8 {
     return cell.trimPartialCodepoint(w.buffered());
 }
 
-/// Length in bytes of the dangerous sequence starting at `s[i]`, or 0
-/// when the byte is safe to pass through.
-fn dangerousAt(s: []const u8, i: usize) usize {
-    const b = s[i];
-
-    // C0 controls and DEL. This includes ESC (command introducer) but
-    // also CR / LF / TAB, which would let external text forge rows and
-    // columns even without an escape sequence.
-    if (b < 0x20 or b == 0x7f) return 1;
-
-    // C1 controls encoded as UTF-8 (U+0080–U+009F). Terminals that
-    // decode UTF-8 before dispatching treat U+009B as a bare CSI, so
-    // filtering only the C0 ESC would leave a second way in.
-    if (b == 0xc2 and i + 1 < s.len and s[i + 1] >= 0x80 and s[i + 1] <= 0x9f) return 2;
-
-    // Bidi overrides and isolates (U+202A–U+202E, U+2066–U+2069).
-    // Not commands, but the cheapest available way to make a name
-    // render as something other than its bytes — worth the two
-    // explicit ranges even though general confusable detection is out
-    // of scope.
-    if (b == 0xe2 and i + 2 < s.len) {
-        const b1 = s[i + 1];
-        const b2 = s[i + 2];
-        if (b1 == 0x80 and b2 >= 0xaa and b2 <= 0xae) return 3;
-        if (b1 == 0x81 and b2 >= 0xa6 and b2 <= 0xa9) return 3;
-    }
-
-    return 0;
+fn dangerous(cp: u21) bool {
+    return cp < 0x20 or (cp >= 0x7f and cp <= 0x9f) or
+        (cp >= 0x202a and cp <= 0x202e) or (cp >= 0x2066 and cp <= 0x2069);
 }
 
 test "plain text passes through untouched" {
@@ -133,4 +114,40 @@ test "filtered text measures one cell per replaced sequence" {
 test "into truncates rather than overflowing a fixed field" {
     var buf: [4]u8 = undefined;
     try std.testing.expectEqualStrings("abcd", into(&buf, "abcdefgh"));
+}
+
+test "malformed UTF-8 and raw C1 bytes are replaced" {
+    var buf: [128]u8 = undefined;
+    try std.testing.expectEqualStrings("a?b?2J", into(&buf, "a\xffb\x9b2J"));
+    for ([_][]const u8{ "\xc0\xaf", "\xed\xa0\x80", "\xf4\x90\x80\x80", "\xe2\x82", "\x80" }) |s| {
+        try std.testing.expect(std.unicode.utf8ValidateSlice(into(&buf, s)));
+    }
+    // 0x9b is safe inside a valid multibyte character (U+00DB).
+    try std.testing.expectEqualStrings("Û字🚀", into(&buf, "Û字🚀"));
+}
+
+test "arbitrary bytes remain safe and decodable at every buffer boundary" {
+    var random: std.Random.DefaultPrng = .init(0x7475697a);
+    var input: [32]u8 = undefined;
+    var buf: [32]u8 = undefined;
+    for (0..256) |_| {
+        random.random().bytes(&input);
+        for (0..buf.len + 1) |size| {
+            const safe = into(buf[0..size], &input);
+            var it = (try std.unicode.Utf8View.init(safe)).iterator();
+            while (it.nextCodepoint()) |cp| {
+                try std.testing.expect(cp >= 0x20 and !(cp >= 0x7f and cp <= 0x9f));
+                try std.testing.expect(!(cp >= 0x202a and cp <= 0x202e));
+                try std.testing.expect(!(cp >= 0x2066 and cp <= 0x2069));
+            }
+        }
+    }
+}
+
+test "truncation never splits a valid multibyte character" {
+    const s = "A字🚀e\u{0301}\x1b!";
+    var buf: [64]u8 = undefined;
+    for (0..s.len + 1) |size| {
+        try std.testing.expect(std.unicode.utf8ValidateSlice(into(buf[0..size], s)));
+    }
 }

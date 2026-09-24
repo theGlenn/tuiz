@@ -86,8 +86,9 @@ fn winchHandler(_: std.posix.SIG) callconv(.c) void {
     resize_flag.store(1, .release);
 }
 
-/// Install the SIGWINCH handler. Only worth calling when stdout is a
-/// tty — otherwise there is no resize source to listen for.
+/// Install a process-global SIGWINCH handler, replacing any previous
+/// handler. The application must own signal handling and serialize
+/// calls to `takeResize`. Only useful when stdout is a tty.
 pub fn watchResize() void {
     var act = std.posix.Sigaction{
         .handler = .{ .handler = winchHandler },
@@ -124,6 +125,10 @@ pub fn drainStdin() void {
         }};
         const n = std.posix.poll(&pfd, 0) catch break;
         if (n == 0) break;
-        _ = std.posix.read(std.posix.STDIN_FILENO, &scratch) catch break;
+        // HUP/ERR/NVAL can wake poll without readable input. EOF also
+        // remains readable forever, so a zero-byte read must end the drain.
+        if (pfd[0].revents & std.posix.POLL.IN == 0) break;
+        const read = std.posix.read(std.posix.STDIN_FILENO, &scratch) catch break;
+        if (read == 0) break;
     }
 }

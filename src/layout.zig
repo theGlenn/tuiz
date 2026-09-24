@@ -10,14 +10,17 @@ const std = @import("std");
 /// `min_rows` the viewport reports `too_small` and the application
 /// should render a one-line apology instead of a broken frame.
 pub const Limits = struct {
+    /// Smallest usable terminal width; must be positive.
     min_cols: usize,
     min_rows: usize,
     /// Hard ceiling on drawable width. Very wide terminals stretch a
     /// fixed-content layout into unreadable sparseness, and every row
     /// buffer has to be sized for the widest row the layout can emit.
+    /// Must be at least `min_cols - 1` (one column is reserved).
     max_cols: usize,
     /// Outer gutter, applied on both sides. Approximates the card
     /// padding of a design mock; content never touches the edge.
+    /// Both gutters must fit within `min_cols - 1` cells.
     margin: usize = 0,
 };
 
@@ -33,16 +36,18 @@ pub const Viewport = struct {
     too_small: bool = false,
 
     pub fn fromWinsize(ws: std.posix.winsize, limits: Limits) Viewport {
+        std.debug.assert(limits.min_cols > 0);
+        std.debug.assert(limits.max_cols >= limits.min_cols - 1);
+        std.debug.assert(limits.margin <= (limits.min_cols - 1) / 2);
         // `ws.row == 0` happens on non-tty fallbacks that only fake a
         // column count; treat it as "unknown, assume tall enough"
         // rather than refusing to draw.
         if (ws.col < limits.min_cols or (ws.row != 0 and ws.row < limits.min_rows)) {
             return .{ .cols = ws.col, .rows = ws.row, .margin = limits.margin, .too_small = true };
         }
-        const clamped: usize = @min(@as(usize, ws.col), limits.max_cols + 1);
         // Keep one spare column so the last glyph of a full-width row
         // never wraps on an exact-width terminal.
-        const inner = clamped - 1;
+        const inner = @min(@as(usize, ws.col) - 1, limits.max_cols);
         return .{
             .cols = ws.col,
             .rows = ws.row,
