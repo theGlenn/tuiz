@@ -29,32 +29,30 @@ accounting, and the widgets a telemetry dashboard needs:
 | `bigtext` | 3×5 block-glyph numerals for a headline figure |
 | `logo` | half-block bitmap art, two pixels per cell |
 
-**Not** in scope: an event loop, a widget tree, cell diffing, mouse
-input, or grapheme-cluster segmentation (a ZWJ emoji sequence
+The toolkit does not include an event loop, a widget tree, cell diffing,
+mouse input, or grapheme-cluster segmentation (a ZWJ emoji sequence
 measures as its parts). If you need those, reach for
 [libvaxis](https://github.com/rockorager/libvaxis) or notcurses.
 
-## The one design rule
+## Design
 
-The toolkit writes bytes into a writer you supply. It never opens a
-file descriptor, never picks an I/O backend, and never declares a
-colour.
+The toolkit writes bytes into a writer you supply. Your application
+manages file descriptors, chooses the I/O backend, and supplies the
+palette.
 
-That is why `terminal` exports escape sequences as `[]const u8`
-constants rather than writing them, why `Canvas` takes a `Style`, and
-why every widget takes the colours it draws with as arguments. Your
-application keeps the tty, the palette, and the loop; the toolkit
-keeps the geometry.
+`terminal` exports escape sequences as `[]const u8` constants,
+`Canvas` takes a `Style`, and every widget takes its colours as
+arguments. Your application also runs the event loop.
 
-## One thing you must not skip
+## Untrusted text
 
-Any string your app did not write itself — a hostname, a filename, a
-subprocess's stderr — goes through `sanitize.write` before it reaches
-a row. One `\x1b` in a device name otherwise lets whoever supplied it
-repaint the screen, set the window title, or write the clipboard. It
-also silently breaks layout: `cell.width` skips CSI sequences, so an
-embedded escape measures as zero cells and every column after it
-lands wrong.
+Pass any string your app did not write itself through `sanitize.write`
+before it reaches a row. This includes hostnames, filenames, and a
+subprocess's stderr. One `\x1b` in a device name otherwise lets whoever
+supplied it repaint the screen, set the window title, or write the
+clipboard. It also silently breaks layout: `cell.width` skips CSI
+sequences, so an embedded escape measures as zero cells and every
+column after it lands wrong.
 
 ```zig
 try lw.print(" {s}", .{label_color});
@@ -138,8 +136,8 @@ pub fn drawFrame(out: *std.Io.Writer, cpu: *const Series, ws: std.posix.winsize)
 }
 ```
 
-Then push `out.buffered()` to the terminal however you like — that
-part is yours. [`examples/dashboard.zig`](examples/dashboard.zig) is a
+Then push `out.buffered()` to the terminal using your chosen I/O backend.
+[`examples/dashboard.zig`](examples/dashboard.zig) is a
 complete program: raw mode, alt screen, resize handling, a poll-based
 loop, and every widget above.
 
