@@ -1,0 +1,63 @@
+.github/workflows/ci.yml
+  s_676ae749bbe2bb::t_49c633829c2880 1-32
+.gitignore
+  s_676ae749bbe2bb::t_3a0954618683e7 1-4
+.zigversion
+  s_676ae749bbe2bb::t_bdc16930c86e8b 1
+LICENSE
+  s_676ae749bbe2bb::t_3209a0dcde896b 1-201
+README.md
+  s_3a2af8b43d1887::t_c1cf3773ea155c 1-157
+build.zig
+  s_676ae749bbe2bb::t_9089ea99d8e1a0 1-49
+build.zig.zon
+  s_676ae749bbe2bb::t_c75da7b051d7bc 1-8
+examples/dashboard.zig
+  s_676ae749bbe2bb::t_3f31d9e230e8cc 1-218
+src/canvas.zig
+  s_676ae749bbe2bb::t_9f6733dd0c6559 1-159
+src/cell.zig
+  s_676ae749bbe2bb::t_0619ce7960949a 1-354
+src/color.zig
+  s_676ae749bbe2bb::t_94118587c75323 1-95
+src/layout.zig
+  s_676ae749bbe2bb::t_7a8222a6253960 1-87
+src/root.zig
+  s_676ae749bbe2bb::t_935d784b9496a9 1-70
+src/sanitize.zig
+  s_676ae749bbe2bb::t_3e7c7660e2fad6 1-136
+src/terminal.zig
+  s_676ae749bbe2bb::t_3f880bbf6e9066 1-129
+src/widgets/bigtext.zig
+  s_676ae749bbe2bb::t_b3e7480861d34b 1-91
+src/widgets/logo.zig
+  s_676ae749bbe2bb::t_78f07dbb78f2c1 1-267
+src/widgets/meter.zig
+  s_676ae749bbe2bb::t_8484297c1a01f3 1-80
+src/widgets/series.zig
+  s_676ae749bbe2bb::t_869c038ebccc65 1-260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "4805a2715bbddeb5f9ee2d3f70e38a6fa96c9053",
+  "prompts": {},
+  "sessions": {
+    "s_3a2af8b43d1887": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "efe07a87-bfb1-42ef-beb8-9a8dc2bcb3df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Glenn Sonna <kenpachi.os@gmail.com>"
+    },
+    "s_676ae749bbe2bb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c8d11181-52fc-4717-ac68-11446bd3e3de",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Glenn Sonna <kenpachi.os@gmail.com>"
+    }
+  }
+}
